@@ -11,11 +11,7 @@ jobs:
     steps:
       - name: Optimize Network and Core RDP Settings
         run: |
-          # 1. Aktifkan Remote Desktop & Bypass NLA (Instan Login Tanpa Loading Lama)
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
-
+          
           # 2. OPTIMASI UDP & TCP FIREWALL (Respon Mouse/Ketik Instan & Lancar)
           netsh advfirewall firewall delete rule name="RDP-Tailscale-UDP" 2>\$null
           netsh advfirewall firewall add rule name="RDP-Tailscale-UDP" dir=in action=allow protocol=UDP localport=3389
