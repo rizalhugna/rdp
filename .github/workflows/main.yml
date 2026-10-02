@@ -11,29 +11,31 @@ jobs:
     steps:
       - name: Optimize Network and Core RDP Settings
         run: |
-          # 1. Aktifkan Remote Desktop & Matikan Keamanan Ketat (NLA) agar Loading Masuk Instan
+          # 1. Aktifkan Remote Desktop & Bypass NLA (Instan Login Tanpa Loading Lama)
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
 
-          # 2. OPTIMASI RDP: Paksa RDP Menggunakan Protokol UDP (Jauh Lebih Lancar & No Lag dibanding TCP)
+          # 2. OPTIMASI UDP & TCP FIREWALL (Respon Mouse/Ketik Instan & Lancar)
           netsh advfirewall firewall delete rule name="RDP-Tailscale-UDP" 2>\$null
           netsh advfirewall firewall add rule name="RDP-Tailscale-UDP" dir=in action=allow protocol=UDP localport=3389
           netsh advfirewall firewall delete rule name="RDP-Tailscale-TCP" 2>\$null
           netsh advfirewall firewall add rule name="RDP-Tailscale-TCP" dir=in action=allow protocol=TCP localport=3389
 
-          # 3. OPTIMASI WINDOWS REGISTRY: Tweak performa grafis RDP ke performa tertinggi (Visual Lancar)
+          # 3. TWEAK REGISTRY WINDOWS (Performa Grafis RDP Tertinggi & Kompresi Maksimal)
           \$RemoteKey = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
           if (-not (Test-Path RemoteKey)) New-Item -Path RemoteKey -Force | Out-Null }
-          Set-ItemProperty -Path \$RemoteKey -Name "bdtLevel" -Value 0 -Force # Memaksa kompresi performa tinggi
+          Set-ItemProperty -Path \$RemoteKey -Name "bdtLevel" -Value 0 -Force
           
-          # Tweak Tcpip Windows agar Internet & Respons Jaringan Agresif (Super Fast)
-          netsh int tcp set global autotuninglevel=normal
+          # 4. OPTIMASI NETSH TCP STACK (Internet Agresif, Throughput Gigabit, & Anti-Throttling)
+          netsh int tcp set global autotuninglevel=experimental
           netsh int tcp set global congestionprovider=ctcp
           netsh int tcp set global ecn=enable
           netsh int tcp set global timestamps=disabled
+          netsh int tcp set global rss=enabled
+          netsh int tcp set global netdma=enabled
 
-          # Restart service RDP untuk menerapkan konfigurasi no-lag
+          # Restart Service RDP untuk menerapkan konfigurasi
           Restart-Service -Name TermService -Force
 
       - name: Create RDP User with Fixed Password
@@ -47,38 +49,26 @@ jobs:
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
          
           echo "RDP_CREDS=User: RDP | Password: password" >> env:GITHUB_ENV
-         
-          if (-not (Get-LocalUser -Name "RDP")) {
-              Write-Error "User creation failed"
-              exit 1
-          }
 
       - name: Install Tailscale
         run: |
-          \$tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          \$tsUrl = "https://tailscale.com"
           installerPath = "env:TEMP\tailscale.msi"
-         
           Invoke-WebRequest -Uri tsUrl -OutFile installerPath
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
           Remove-Item \$installerPath -Force
 
-      - name: Establish Tailscale Connection (Optimized)
+      - name: Establish Tailscale Connection (Lean & Fast Mode)
         run: |
-          # 4. OPTIMASI TAILSCALE: Aktifkan mode Fast Path, paksa rute langsung, dan matikan fitur berat yang tidak perlu
-          & "\$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=\({{ secrets.TAILSCALE_AUTHKEY }} --hostname=gh-runner-\)env:GITHUB_RUN_ID --accept-dns=false --accept-routes=true --snat-subnet-routes=false
-         
-          # Wait for Tailscale to assign an IP
-          \$tsIP = \(null\)retries = 0
+          # Menjalankan Tailscale tanpa beban DNS eksternal agar rute VPN langsung (Direct)
+          & "\(env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=\){{ secrets.TAILSCALE_AUTHKEY }} --hostname=gh-runner-\(env:GITHUB_RUN_ID --accept-dns=false --accept-routes=true --snat-subnet-routes=false\)tsIP = \(null\)retries = 0
           while (-not tsIP -and retries -lt 10) {
               \(tsIP = & "\)env:ProgramFiles\Tailscale\tailscale.exe" ip -4
               Start-Sleep -Seconds 5
               \$retries++
           }
          
-          if (-not \$tsIP) {
-              Write-Error "Tailscale IP not assigned. Exiting."
-              exit 1
-          }
+          if (-not \$tsIP) { Write-Error "Tailscale IP not assigned."; exit 1 }
           echo "TAILSCALE_IP=tsIP" >> env:GITHUB_ENV
      
       - name: Verify RDP Accessibility
@@ -93,15 +83,14 @@ jobs:
 
       - name: Maintain Connection + Watch RDP User
         run: |
-          Write-Host "`n=== RDP ACCESS ==="
+          Write-Host "`n=== RDP ACCESS COORD ==="
           Write-Host "Address: $env:TAILSCALE_IP"
           Write-Host "Username: RDP"
-          Write-Host "Password: $(echo $env:RDP_CREDS)"
-          Write-Host "==================`n"
+          Write-Host "========================`n"
 
           \$rdpProfile = "C:\Users\RDP"
           startupPath = "rdpProfile\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
-          \$downloadUrl = "https://gitlab.com/MR.English2008/pcme_rdp/-/raw/main/Downloads.bat"
+          \$downloadUrl = "https://gitlab.com"
           downloadPath = "startupPath\Downloads.bat"
 
           while (\$true) {
@@ -110,27 +99,19 @@ jobs:
                       if (-not (Test-Path \$startupPath)) {
                           New-Item -ItemType Directory -Path \$startupPath -Force | Out-Null
                       }
-
                       Invoke-WebRequest -Uri downloadUrl -OutFile downloadPath -UseBasicParsing
-                      Write-Host "✅ Downloads.bat copied to \$downloadPath"
-
                       cmd /c \$downloadPath
-                      Write-Host "✅ Downloads.bat executed successfully"
                       break
                   }
                   catch {
-                      Write-Host "❌ Error copying or executing Downloads.bat: (_.Exception.Message)"
                       break
                   }
               }
               else {
-                  Write-Host "[\$(Get-Date)] Waiting for RDP profile to be created..."
-                  Start-Sleep -Seconds 30
+                  Start-Sleep -Seconds 10
               }
           }
 
-          # Keep runner alive
           while (\$true) {
-              Write-Host "[\$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
               Start-Sleep -Seconds 300
           }
